@@ -230,6 +230,10 @@ CONTROLNET_MODEL_IDS = {
     #"sdxl_depth-zoe": "TencentARC/t2i-adapter-depth-zoe-sdxl-1.0",
     #"sdxl_recolor": "TencentARC/t2i-adapter-recolor-sdxl-1.0",
     "img2img": "Nothinghere",
+    "ipadapter": "Nothinghere",
+    "ipadapter-light": "Nothinghere",
+    "ipadapter-plus": "Nothinghere",
+    "ipadapter-plus-face": "Nothinghere",
 }
 
 
@@ -505,7 +509,7 @@ class Model_Diffusers:
                     )
 
 
-        if task_name not in ["txt2img", "inpaint", "img2img"]:
+        if task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
             match class_name:
                 case "StableDiffusionPipeline":
 
@@ -546,7 +550,7 @@ class Model_Diffusers:
                     ).to(self.device)
 
 
-        if task_name in ["txt2img", "img2img"]:
+        if task_name in ["txt2img", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
             match class_name:
 
                 case "StableDiffusionPipeline":
@@ -574,6 +578,17 @@ class Model_Diffusers:
 
             if task_name == "img2img":
                 self.pipe = AutoPipelineForImage2Image.from_pipe(self.pipe)
+
+            if task_name in ["ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
+                match task_name:
+                    case "ipadapter":
+                        self.pipe.load_ip_adapter("h94/IP-Adapter", subfolder="models", weight_name="ip-adapter_sd15.bin")
+                    case "ipadapter-light":
+                        self.pipe.load_ip_adapter("h94/IP-Adapter", subfolder="models", weight_name="ip-adapter_sd15_light.bin")
+                    case "ipadapter-plus":
+                        self.pipe.load_ip_adapter("h94/IP-Adapter", subfolder="models", weight_name="ip-adapter-plus_sd15.bin")
+                    case "ipadapter-plus-face":
+                        self.pipe.load_ip_adapter("h94/IP-Adapter", subfolder="models", weight_name="ip-adapter-plus-face_sd15.bin")
 
         # Create new base values
         self.pipe.to(self.device)
@@ -780,6 +795,35 @@ class Model_Diffusers:
             eta=1.0,
             strength=strength,
             image=init_image,  # original image
+            num_images_per_prompt=num_images,
+            num_inference_steps=num_steps,
+            guidance_scale=guidance_scale,
+            clip_skip=clip_skip,
+            generator=generator,
+        ).images
+
+    @torch.autocast("cuda")
+    def run_pipe_ipadapter(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        prompt_embeds,
+        negative_prompt_embeds,
+        num_images: int,
+        num_steps: int,
+        guidance_scale: float,
+        clip_skip: int,
+        init_image,
+        generator,
+    ) -> list[PIL.Image.Image]:
+        # Return PIL images
+        # generator = torch.Generator().manual_seed(seed)
+        return self.pipe(
+            prompt=None,
+            negative_prompt=None,
+            prompt_embeds=prompt_embeds,
+            negative_prompt_embeds=negative_prompt_embeds,
+            ip_adapter_image=init_image,  # original image
             num_images_per_prompt=num_images,
             num_inference_steps=num_steps,
             guidance_scale=guidance_scale,
@@ -1846,7 +1890,7 @@ class Model_Diffusers:
 
         # Get params preprocess Global SD 1.5
         preprocess_params_config = {}
-        if self.task_name not in ["txt2img", "inpaint", "img2img"]:
+        if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
             preprocess_params_config["image"] = array_rgb
             preprocess_params_config["image_resolution"] = image_resolution
 
@@ -1964,7 +2008,7 @@ class Model_Diffusers:
             logger.info("Ip2p")
             control_image = self.process_ip2p(**preprocess_params_config)
 
-        elif self.task_name == "img2img":
+        elif self.task_name in ["img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
             preprocess_params_config["image"] = array_rgb
             preprocess_params_config["image_resolution"] = image_resolution
             init_image = self.process_img2img(**preprocess_params_config)
@@ -1973,7 +2017,7 @@ class Model_Diffusers:
         if self.class_name == "StableDiffusionXLPipeline":
             # Get params preprocess XL
             preprocess_params_config_xl = {}
-            if self.task_name not in ["txt2img", "inpaint", "img2img"]:
+            if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                 preprocess_params_config_xl["image"] = array_rgb
                 preprocess_params_config_xl["preprocess_resolution"] = preprocess_resolution
                 preprocess_params_config_xl["image_resolution"] = image_resolution
@@ -2046,7 +2090,7 @@ class Model_Diffusers:
                 pipe_params_config["image"] = init_image
                 pipe_params_config["mask_image"] = control_mask
                 logger.info(f"Image resolution: {str(init_image.size)}")
-            elif self.task_name not in ["txt2img", "inpaint", "img2img"]:
+            elif self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                 pipe_params_config["image"] = control_image
                 pipe_params_config["adapter_conditioning_scale"] = t2i_adapter_conditioning_scale
                 pipe_params_config["adapter_conditioning_factor"] = t2i_adapter_conditioning_factor
@@ -2069,7 +2113,7 @@ class Model_Diffusers:
             pipe_params_config["control_guidance_start"] = control_guidance_start
             pipe_params_config["control_guidance_end"] = control_guidance_end
             logger.info(f"Image resolution: {str(init_image.size)}")
-        elif self.task_name not in ["txt2img", "inpaint", "img2img"]:
+        elif self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
             pipe_params_config["control_image"] = control_image
             pipe_params_config[
                 "controlnet_conditioning_scale"
@@ -2081,6 +2125,9 @@ class Model_Diffusers:
             pipe_params_config["strength"] = strength
             pipe_params_config["init_image"] = init_image
             logger.info(f"Image resolution: {str(init_image.size)}")
+        elif self.task_name in ["ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
+            pipe_params_config["init_image"] = init_image
+            logger.info(f"IP Adapter Image resolution: {str(init_image.size)}")
 
         # detailfix params and pipe global
         if adetailer_A or adetailer_B:
@@ -2423,6 +2470,8 @@ class Model_Diffusers:
             try:
                 if self.class_name == "StableDiffusionXLPipeline":
                     # sdxl pipe
+                    if self.task_name in ["ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
+                        raise ValueError(f"IPAdapter not working for SDXL because I've never used it before so i need help in this!")
                     images = self.pipe(
                         prompt_embeds=conditioning[0:1],
                         pooled_prompt_embeds=pooled[0:1],
@@ -2431,13 +2480,13 @@ class Model_Diffusers:
                         #generator=pipe_params_config["generator"],
                         **pipe_params_config,
                     ).images
-                    if self.task_name not in ["txt2img", "inpaint", "img2img"]:
+                    if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                         images = [control_image] + images
                 elif self.task_name == "txt2img":
                     images = self.run_pipe_SD(**pipe_params_config)
                 elif self.task_name == "inpaint":
                     images = self.run_pipe_inpaint(**pipe_params_config)
-                elif self.task_name not in ["txt2img", "inpaint", "img2img"]:
+                elif self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                     results = self.run_pipe(
                         **pipe_params_config
                     )  ## pipe ControlNet add condition_weights
@@ -2445,6 +2494,8 @@ class Model_Diffusers:
                     del results
                 elif self.task_name == "img2img":
                     images = self.run_pipe_img2img(**pipe_params_config)
+                elif self.task_name in ["ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
+                    images = self.run_pipe_ipadapter(**pipe_params_config)
             except Exception as e:
                 e = str(e)
                 if "Tensor with 2 elements cannot be converted to Scalar" in e:
@@ -2454,6 +2505,8 @@ class Model_Diffusers:
                     self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
                     if self.class_name == "StableDiffusionXLPipeline":
                         # sdxl pipe
+                        if self.task_name in ["ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
+                            raise ValueError(f"IPAdapter not working for SDXL because I've never used it before so i need help in this!")
                         images = self.pipe(
                             prompt_embeds=conditioning[0:1],
                             pooled_prompt_embeds=pooled[0:1],
@@ -2462,13 +2515,13 @@ class Model_Diffusers:
                             #generator=pipe_params_config["generator"],
                             **pipe_params_config,
                         ).images
-                        if self.task_name not in ["txt2img", "inpaint", "img2img"]:
+                        if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                             images = [control_image] + images
                     elif self.task_name == "txt2img":
                         images = self.run_pipe_SD(**pipe_params_config)
                     elif self.task_name == "inpaint":
                         images = self.run_pipe_inpaint(**pipe_params_config)
-                    elif self.task_name not in ["txt2img", "inpaint", "img2img"]:
+                    elif self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                         results = self.run_pipe(
                             **pipe_params_config
                         )  ## pipe ControlNet add condition_weights
@@ -2476,6 +2529,9 @@ class Model_Diffusers:
                         del results
                     elif self.task_name == "img2img":
                         images = self.run_pipe_img2img(**pipe_params_config)
+                    elif self.task_name in ["ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
+                        images = self.run_pipe_ipadapter(**pipe_params_config)
+                    
                 elif "The size of tensor a (0) must match the size of tensor b (3) at non-singleton" in e:
                     raise ValueError(f"steps / strength too low for the model to produce a satisfactory response")
                 else:
@@ -2503,7 +2559,7 @@ class Model_Diffusers:
                 # for img_single in images:
                 # image_ad = img_single.convert("RGB")
                 # image_pil_list.append(image_ad)
-                if self.task_name not in ["txt2img", "inpaint", "img2img"]:
+                if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                     images = images[1:]
 
                 if adetailer_A:
@@ -2521,7 +2577,7 @@ class Model_Diffusers:
                         **adetailer_B_params,
                     )
 
-                if self.task_name not in ["txt2img", "inpaint", "img2img"]:
+                if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"]:
                     images = [control_image] + images
                 # del detailfix_pipe
                 torch.cuda.empty_cache()
@@ -2566,7 +2622,7 @@ class Model_Diffusers:
                 clip_skip,
             ]
 
-            valid_seeds = [0] + seeds if self.task_name not in ["txt2img", "inpaint", "img2img"] else seeds
+            valid_seeds = [0] + seeds if self.task_name not in ["txt2img", "inpaint", "img2img", "ipadapter", "ipadapter-light", "ipadapter-plus", "ipadapter-plus-face"] else seeds
             for image_, seed_ in zip(images, valid_seeds):
                 image_path = "not saved in storage"
                 if save_generated_images:
